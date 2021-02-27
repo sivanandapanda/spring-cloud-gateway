@@ -6,7 +6,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,6 +21,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.stream.Stream;
 
 @SpringBootApplication
@@ -76,7 +79,7 @@ class CustomerRestController {
 
 	private final Flux<Customer> customerFlux;
 
-	@GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE, value = "/customer")
+	@GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE, value = "/customers")
 	Flux<Customer> get() {
 		return customerFlux;
 	}
@@ -93,10 +96,38 @@ class Customer {
 @RestController
 class ReliabilityRestController {
 
-	private final Map<String, AtomicInteger> counts = new ConcurrentHashMap<>();
+	private final Map<String, AtomicInteger> countsOfErrors = new ConcurrentHashMap<>();
+	private final Map<Long, AtomicInteger> countPerSecond = new ConcurrentHashMap<>();
+
+	@GetMapping("/hello")
+	String hello() {
+		var now = System.currentTimeMillis();
+		var second = (now/1000);
+		var result = countPerSecond.compute(second, (aLong, atomicInteger) -> {
+			if (atomicInteger == null) atomicInteger = new AtomicInteger(0);
+			atomicInteger.incrementAndGet();
+			return atomicInteger;
+		});
+		System.out.println("There have been "+ result.get() + " requests for the second " + second);
+		return "hello()";
+	}
 
 	@GetMapping("/error/{id}")
-	Flux<Customer> get(@PathVariable String id) {
-		this.counts.compute(id. )
+	ResponseEntity<?> error(@PathVariable String id) {
+		var result = this.countsOfErrors.compute(id, new BiFunction<>() {
+			@Override
+			public AtomicInteger apply(String s, AtomicInteger atomicInteger) {
+				if (null == atomicInteger) atomicInteger = new AtomicInteger(0);
+				atomicInteger.incrementAndGet();
+				return atomicInteger;
+			}
+		});
+
+		if( result.get() < 5) {
+			System.out.println("error for ID '" + id + "' on count #" + result);
+			return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+		} else {
+			return ResponseEntity.ok(Map.of("message", "good job, " + id +" you did in try nnumber " + result.get()));
+		}
 	}
 }
